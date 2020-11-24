@@ -1,0 +1,8 @@
+# $FreeBSD$
+# Options specific to the powerpc platform kernels
+
+OEA			opt_global.h
+IPKDB
+
+POWERMAC		opt_platform.h
+PSIM

@@ -1,0 +1,19 @@
+<!-- -*- sgml -*- -->
+
+<!-- $FreeBSD$ -->
+
+<!-- Text constants which probably don't need to be changed.-->
+
+<!-- Notes new to our first point release (hopefully there'll only be one!) -->
+<!ENTITY new.521 "[5.2.1]">
+
+<!-- The marker for MFCs. -->
+<!ENTITY merged "[MERGED]">
+
+<!ENTITY % include.historic "IGNORE">
+<!ENTITY % no.include.historic "IGNORE">
+
+<!-- Files to be included -->
+
+<!ENTITY art SYSTEM "../common/new.sgml">
+

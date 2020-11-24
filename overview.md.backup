@@ -1,0 +1,1046 @@
+# Walkthrough of FreeBSD 5.2's Boot Process
+
+## Contents
+
+1. Code Flow
+2. General Overview (Visual Aids)
+3. General Overview (Code)
+
+## Code Flow
+
+The first '+' means that I have read the code or I have a general idea of what it does.
+The second '+' means that I have read the code closely and documented it as it relates to bootup.
+The third '+' means that I have added it to this markdown document for reference.
+
+```txt
+File: boot0.s
+	start()
+
+File: boot1.s
+	main()
+File: btx.s
+	init.1()
+
+File: boot2.c
+	main()
+
+File: loader.c
+	main()
+
+File: locore.S
+	
+
+```
+
+## General Overview (Visual Aids)
+
+This section follows the state of memory as the kernel boot process takes place.
+It was used primarily to understand the memory references in the assembly code and to
+understand precisely what the code was doing.
+
+It is recommended that you use this to either review the boot process if it has been
+a while since you've looked at it.
+
+### Memory Map: _boot0_ Stage
+
+```txt
+____________________________________________________ 0x600
+|                                                  |
+|                                                  |
+|                                                  |
+|                                                  |
+|                   Boot Code                      |
+|                                                  |
+|                                                  |
+|__________________________________________________| 0x7b8 (-ox48)
+|                                                  |
+|                 Next Drive (_NXTDRV)             |
+|__________________________________________________| 0x7b9 (-0x47)
+|                                                  |
+|                Default Option (_OPT)             |
+|__________________________________________________| 0x7ba (-0x46)
+|                                                  |
+|             Set Drive Option (_STDRV)            |
+|                 Default = 0x0                    |
+|__________________________________________________| 0x7bb (-0x45)
+|                                                  |
+|                 Flags (_FLAGS)                   |
+|                 Default = 0xf                    |
+|__________________________________________________| 0x7bc (-0x44)
+|                                                  |
+|              Timeout Ticks (_TICKS)              |
+|                 Default = 0xb6                   |
+|__________________________________________________| 0x800
+|                                                  |
+|               Fake Partition (_FAKE)             |
+|__________________________________________________| 0x80f
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|--------------------------------------------------|
+|                                                  | 0x7c00
+|                   MBR/Boot0                      |
+|__________________________________________________|
+```
+
+### Memory Map: Transferring to _boot1_
+
+```txt
+____________________________________________________ 0x600
+|                                                  |
+|                 Relocated Boot0                  |
+|__________________________________________________| 0x800
+|                                                  |
+|               Fake Partition Entry               |
+|__________________________________________________| 0x80f
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|--------------------------------------------------|
+|                                                  | 0x7c00
+|                    Boot1                         |
+|__________________________________________________|
+```
+
+### Memory Map: Jumping to _btx_
+
+```txt
+_______________________________________________ 0x600
+|                                             |
+|           Relocated Boot0/MBR               |
+|_____________________________________________| 0x700
+|                                             |
+|            Relocated Boot1                  |
+|_____________________________________________| 0x900
+|                                             |
+|               Arguments                     |
+|_____________________________________________|
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|---------------------------------------------| 0x7c00
+|                                             |
+|                 Boot1                       |
+|_____________________________________________|
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|---------------------------------------------| 0x8cec
+|                                             |
+|                 Boot1                       |
+|_____________________________________________| 0x8eec
+|                                             |
+|               Disklabel                     |
+|_____________________________________________| 0x9000
+|                                             |
+|               BTX Server                    |
+|_____________________________________________| 
+|                                             |
+|                 Boot2                       |
+|_____________________________________________| 0xacec
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|---------------------------------------------| 0xc000
+|                                             |
+|               BTX Client                    |
+|_____________________________________________| 0x10000
+```
+
+## Memory Map: Transferring to _boot2.c_ Code
+
+```c
+___________________________________________________ 0x600
+|                                                 |
+|                     Boot0                       |
+|_________________________________________________| 0x700
+|                                                 |
+|                Relocated Boot1                  |
+|_________________________________________________| 0x900
+|                                                 |
+|                   Arguments                     |
+|_________________________________________________|
+|                                                 |
+|               Supervisor Stack                  |
+|_________________________________________________| 0x1800
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|-------------------------------------------------| 0x1e00
+|                                                 |
+|           Interrupt Descriptor Table            |
+|_________________________________________________| 0x1fa0
+|                                                 |
+|            Task-State Segment (TSS)             |
+|_________________________________________________| 0x2130
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|-------------------------------------------------| 0x4000
+|                                                 |
+|                 Page Directory                  |
+|_________________________________________________| 0x5000
+|                                                 |
+|                   Page Tables                   |
+|_________________________________________________|
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|-------------------------------------------------| 0x8cec
+|                                                 |
+|                     Boot1                       |
+|_________________________________________________| 0x8eec
+|                                                 |
+|                   Disk Label                    |
+|_________________________________________________| 0x9000
+|                                                 |
+|                   BTX Server                    |
+|_________________________________________________|
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|-------------------------------------------------| 0xc000
+|                                                 |
+|                   BTX Client                    |
+|_________________________________________________|
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|-------------------------------------------------|
+|                                                 |
+|                  User Stack                     |
+|_________________________________________________| 0x9f000
+```
+
+## Memory Map: Transferring from _boot2_
+
+```txt
+___________________________________________________ 0x600
+|                                                 |
+|                     Boot0                       |
+|_________________________________________________| 0x700
+|                                                 |
+|                Relocated Boot1                  |
+|_________________________________________________| 0x900
+|                                                 |
+|                   Arguments                     |
+|_________________________________________________|
+|                                                 |
+|               Supervisor Stack                  |
+|_________________________________________________| 0x1800
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|-------------------------------------------------| 0x1e00
+|                                                 |
+|           Interrupt Descriptor Table            |
+|_________________________________________________| 0x1fa0
+|                                                 |
+|            Task-State Segment (TSS)             |
+|_________________________________________________| 0x2130
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|-------------------------------------------------| 0x4000
+|                                                 |
+|                 Page Directory                  |
+|_________________________________________________| 0x5000
+|                                                 |
+|                   Page Tables                   |
+|_________________________________________________|
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|-------------------------------------------------| 0x8cec
+|                                                 |
+|                     Boot1                       |
+|_________________________________________________| 0x8eec
+|                                                 |
+|                   Disk Label                    |
+|_________________________________________________| 0x9000
+|                                                 |
+|                   BTX Server                    |
+|_________________________________________________|
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|-------------------------------------------------| 0xc000
+|                                                 |
+|                   BTX Client                    |
+|_________________________________________________|
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|-------------------------------------------------|
+|                                                 |
+|                  User Stack                     |
+|_________________________________________________| 0x9f000
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
+|-------------------------------------------------| 0x200000
+|                                                 |
+|                    Loader                       |
+|_________________________________________________|
+```
+
+### _btxldr_: Initial User Stack 
+
+```txt
+          User Stack
+_____________________________________ 0x9f000
+|                                   |
+| int autoboot                      |
+|___________________________________|
+|                                   |
+| ino_t ino                         |
+|___________________________________|
+|                                   |
+| return address to main()          |
+|___________________________________|
+|                                   |
+| union hdr                         |
+|___________________________________|
+|                                   |
+| Elf32_Phdr ep                     |
+|___________________________________|
+|                                   |
+| Elf32_Shdr es                     |
+|___________________________________|
+|                                   |
+| caddr_t p                         |
+|___________________________________|
+|                                   |
+| uint32_t addr, x                  |
+|___________________________________|
+|                                   |
+| int fmt, i, j                     |            Supervisor Stack
+|___________________________________|  __________________________________________ 0x1800
+|                                   |  |                                        |
+| uint32 VTOP(&bootinfo)            |  | SS (SEL_UDATA)                         |
+|___________________________________|  |________________________________________|
+|                                   |  |                                        |
+| uint32 0, 0, 0                    |  | User ESP Offset                        |
+|___________________________________|  |________________________________________|
+|                                   |  |                                        |
+| uint32 MAKEBOOTDEV                |  | EFLAGS                                 |
+|___________________________________|  |________________________________________|
+|                                   |  |                                        |
+| RB_BOOTINFO | (opts & RBX_MASK)   |  | CS (SEL_UCODE)                         |
+|___________________________________|  |________________________________________|
+|                                   |  |                                        |
+| caddr_t addr (loader entry)       |  | EIP                                    |
+|___________________________________|  |________________________________________|
+|                                   |  |                                        |
+| return address to load()          |  | Error Code                             |
+|___________________________________|  |________________________________________|
+```
+
+### _loader.c_: Supervisor and User Stack
+
+```txt
+          User Stack
+_____________________________________ 0x9f000
+|                                   |
+| int autoboot                      |
+|___________________________________|
+|                                   |
+| ino_t ino                         |
+|___________________________________|
+|                                   |
+| return address to main()          |
+|___________________________________|
+|                                   |
+| union hdr                         |
+|___________________________________|
+|                                   |
+| Elf32_Phdr ep                     |
+|___________________________________|
+|                                   |
+| Elf32_Shdr es                     |
+|___________________________________|
+|                                   |
+| caddr_t p                         |
+|___________________________________|
+|                                   |
+| uint32_t addr, x                  |
+|___________________________________|
+|                                   |
+| int fmt, i, j                     |            Supervisor Stack
+|___________________________________|  __________________________________________ 0x1800
+|                                   |  |                                        |
+| uint32 VTOP(&bootinfo)            |  | SS (SEL_UDATA)                         |
+|___________________________________|  |________________________________________|
+|                                   |  |                                        |
+| uint32 0, 0, 0                    |  | User ESP Offset                        |
+|___________________________________|  |________________________________________|
+|                                   |  |                                        |
+| uint32 MAKEBOOTDEV                |  | EFLAGS                                 |
+|___________________________________|  |________________________________________|
+|                                   |  |                                        |
+| RB_BOOTINFO | (opts & RBX_MASK)   |  | CS (SEL_UCODE)                         |
+|___________________________________|  |________________________________________|
+|                                   |  |                                        |
+| return address to intx30          |  | EIP                                    |
+|___________________________________|  |________________________________________|
+|                                   |  |                                        |
+| int i                             |  | Error Code                             |
+|___________________________________|  |________________________________________|
+```
+
+### General Overview (Code)
+
+```c
+#
+# Initialise segments and registers to known values.
+# segments start at 0.
+# The stack is immediately below the address we were loaded to.
+#
+start:
+		cld				# String ops inc
+		xorw %ax,%ax			# Zero
+		movw %ax,%es			# Address
+		movw %ax,%ds			#  data
+		movw %ax,%ss			# Set up
+		movw $LOAD,%sp			# %sp = 0x7C00
+	
+#
+# Copy this code to the address it was linked for
+#
+		movw %sp,%si			# %si = 0x7C00
+		movw $start,%di			# %di = 0x600
+		movw $0x100,%cx			# Word count (256 words == 512 bytes)
+		rep	
+		movsw					# Relocates boot sector to 0x600 - 0x800
+#
+# Set address for variable space beyond code, and clear it.
+# Notice that this is also used to point to the values embedded in the block,
+# by using negative offsets.
+#
+		movw %di,%bp			# %bp = 0x800
+		movb $0x8,%cl			# Words to clear
+		rep
+		stosw					# Clear 16 bytes
+								# Fake Partition Table: 0x800 - 0x810 (exclusive upper bound)
+								# %di = 0x810
+#
+# Relocate to the new copy of the code.
+#
+		incb -0xe(%di)			# -0xe(%di) = 0x800
+								# Memory address 0x800 is set to 1 for CHS Addressing
+		jmp main-LOAD+ORIGIN	# Since main is located relative to LOAD, we
+								# subtract LOAD and add ORIGIN to obtain its new value
+#
+# Check what flags were loaded with us, specifically, Use a predefined Drive.
+# If what the bios gives us is bad, use the '0' in the block instead, as well.
+#
+main:
+		testb $0x20,_FLAGS(%bp)		# Is SETDRV set? (Not default)
+		jnz main.1					# Jump here if _FLAGS(%bp) = 0x20
+		testb %dl,%dl				# Drive number valid?
+		js main.2					# Jump here if %dl has any value
+
+main.1:
+		movb _SETDRV(%bp),%dl		# Set the Drive number to use
+
+#
+# Whatever we decided to use, now store it into the fake
+# partition entry that lives in the data space above us.
+#
+main.2:
+		movb %dl,_FAKE(%bp)		# Save drive number
+		callw putn				# To new line
+		pushw %dx				# Save drive number
+#
+# Start out with a pointer to the 4th byte of the first table entry
+# so that after 4 iterations it's beyond the end of the sector.
+# and beyond a 256 byte boundary and has overflowed 8 bits (see next comment).
+# (remember that the table starts 2 bytes earlier than you would expect
+# as the bootable flag is after it in the block)
+#
+		movw $(partbl+0x4),%bx		# Partition table (+4)
+		xorw %dx,%dx				# Item number
+#
+# Loop around on the partition table, printing values until we
+# pass a 256 byte boundary. The end of loop test is at main.5.
+#
+main.3:
+		movb %ch,-0x4(%bx)		# Zero active flag (ch == 0)
+								# Clear active flag in entry
+		btw %dx,_FLAGS(%bp)		# Entry enabled?
+								# Check bit number %dx in _FLAGS(%bp) and set its value
+								# to Carry Flag (CF)
+		jnc main.5				# No
+#
+# If any of the entries in the table are
+# the same as the 'type' in the slice table entry,
+# then this is an empty or non bootable partition. Skip it.
+#
+		movb (%bx),%al			# Load type
+		movw $tables,%di		# Lookup tables
+								# Contains three entries of invalid boot types/partitions
+								# Contains eleven entries that are valid/known
+
+		movb $TBL0SZ,%cl		# %cl = 3
+		repne					# Repeat while not equal
+		scasb					# Scans %di and compares its byte value with %al
+		je main.5				# Yes
+#
+# Now scan the table of known types
+#
+		movb $TBL1SZ,%cl		# %cl = 11
+		repne					# Repeat while not equal
+		scasb					# Scans %di and compares its byte value with %al
+		jne main.4				# No
+#
+# If it matches get the matching element in the
+# next array. if it doesn't, we are already
+# pointing at its first element which points to a "?".
+#
+		addw $TBL1SZ,%di		# Adjust
+main.4:
+		movb (%di),%cl			# Partition
+		addw %cx,%di			#  description
+		callw putx				# Display it
+main.5:
+		incw %dx			# Next item 
+		addb $0x10,%bl		# Next entry
+		jnc main.3			# Till done
+#
+# Passed a 256 byte boundary..
+# table is finished.
+# Add one to the drive number and check it is valid, 
+#
+		popw %ax
+		subb $0x80-0x1,%al
+		cmpb NHRDRV,%al		# Sets flags for NHRDRV - %al
+		jb main.6			# Jump if NHRDRV > %al
+							# Else we set drive number to 0
+
+# If not then if there is only one drive,
+# Don't display drive as an option.
+#
+		decw %ax			# Already drive 0?
+		jz main.7			# Yes
+# If it was illegal or we cycled through them,
+# then go back to drive 0.
+#
+		xorb %al,%al			# Drive 0
+#
+# Whatever drive we selected, make it an ascii digit and save it back
+# to the "next drive" location in the loaded block in case we
+# want to save it for next time.
+# This also is part of the printed drive string so add 0x80 to indicate
+# end of string.
+#
+main.6:
+		addb $'0'|0x80,%al		# Save next
+		movb %al,_NXTDRV(%bp)		#  drive number
+		movw $drive,%di			# Display
+		callw putx			#  item
+#
+# Now that we've printed the drive (if we needed to), display a prompt.
+# Get ready for the input by noting the time.
+#
+main.7:
+		movw $prompt,%si		# Move "Default:" string to %si
+		callw putstr			# Print %si
+		movb _OPT(%bp),%dl		# Display
+		decw %si				#  default
+		callw putkey			#  key
+
+# BIOS Call: INT 0x1A, AH = 0x0
+#  Gets the system time.
+#
+#   Return:
+#     CX:DX = # of clock ticks since midnight
+#     AL = midnight flag, =/= 0 if midnight passed since last read
+#
+		xorb %ah,%ah
+		int $0x1a
+		movw %dx,%di
+		addw _TICKS(%bp),%di	#  timeout
+
+# 
+# Busy loop, looking for keystrokes but
+# keeping one eye on the time.
+
+main.8:
+
+# BIOS Call: INT 0x16, AH = 0x1
+#  Check for keystroke.
+#
+#   Return:
+#     ZF = 0  keystroke available
+#     AH = BIOS scan code
+#     AL = ASCII character
+#
+		movb $0x1,%ah
+		int $0x16
+		jnz main.11		# Jump if ZF = 0 (keystroke available)
+		xorb %ah,%ah
+		int $0x1a
+		cmpw %di,%dx
+		jb main.8
+#
+# If timed out or defaulting, come here.
+#
+main.9:
+		movb _OPT(%bp),%al		# Load default
+		jmp main.12			# Join common code
+#
+# User's last try was bad, beep in displeasure.
+# Since nothing was printed, just continue on as if the user
+# hadn't done anything. This gives the effect of the user getting a beep 
+# for all bad keystrokes but no action until either the timeout
+# occurs or the user hits a good key.
+#
+main.10:
+		movb $0x7,%al			# Signal
+		callw putchr			#  error
+#
+# Get the keystroke.
+#
+main.11:
+		xorb %ah,%ah			# BIOS: Get
+		int $0x16			#  keypress
+		movb %ah,%al			# Scan code
+#
+# If it's CR act as if timed out.
+#
+		cmpb $KEY_ENTER,%al		# Enter pressed?
+		je main.9			# Yes
+#
+# Otherwise check if legal
+# If not ask again.
+#
+		subb $KEY_F1,%al		# Less F1 scan code
+		cmpb $0x4,%al			# F1..F5?
+		jna main.12			# Yes
+		subb $(KEY_1 - KEY_F1),%al	# Less #1 scan code
+		cmpb $0x4,%al			# #1..#5?
+		ja main.10			# No
+#
+# We have a selection.
+# but if it's a bad selection go back to complain.
+# The bits in MNUOPT were set when the options were printed.
+# Anything not printed is not an option.
+#
+main.12:
+		cbtw						# Option
+		btw %ax,_MNUOPT(%bp)	 	#  enabled?
+		jnc main.10					# No
+#
+# Save the info in the original tables
+# for rewriting to the disk.
+#
+		movb %al,_OPT(%bp)		# Save option
+		movw $FAKE,%si			# Partition for write
+		movb (%si),%dl			# Drive number
+		movw %si,%bx			# Partition for read
+		cmpb $0x4,%al			# F5 pressed?
+		pushf				# Save
+		je main.13			# Yes
+		shlb $0x4,%al			# Point to
+		addw $partbl,%ax		#  selected
+		xchgw %bx,%ax	 		#  partition
+		movb $0x80,(%bx)		# Flag active
+#
+# If not asked to do a write-back (flags 0x40) don't do one.
+#
+main.13:
+		pushw %bx			# Save
+		testb $0x40,_FLAGS(%bp)		# No updates?
+		jnz main.14			# Yes
+		movw $start,%bx			# Data to write
+		movb $0x3,%ah			# Write sector
+		callw intx13			#  to disk
+main.14:
+		popw %si			# Restore
+		popf				# Restore
+#
+# If going to next drive, replace drive with selected one.
+# Remember to un-ascii it. Hey 0x80 is already set, cool!
+#
+		jne main.15			# If not F5
+		movb _NXTDRV(%bp),%dl		# Next drive
+		subb $'0',%dl			#  number
+# 
+# load selected bootsector to the LOAD location in RAM.
+# If it fails to read or isn't marked bootable, treat it
+# as a bad selection.
+# XXX what does %si carry?
+#
+main.15:
+		movw $LOAD,%bx			# Address for read
+		movb $0x2,%ah			# Read sector
+		callw intx13			#  from disk
+		jc main.10				# If error
+		cmpw $MAGIC,0x1fe(%bx)	# Bootable?
+		jne main.10			# No
+		pushw %si			# Save
+		movw $crlf,%si		# Leave some
+		callw puts			#  space
+		popw %si			# Restore
+		jmp *%bx			# Invoke bootstrap
+
+
+start:	jmp main			// Start recognizably
+
+// This is the start of a standard BIOS Parameter Block (BPB). Most bootable
+// FAT disks have this at the start of their MBR. While normal BIOS's will
+// work fine without this section, IBM's El Torito emulation "fixes" up the
+// BPB by writing into the memory copy of the MBR. Rather than have data
+// written into our xread routine, we'll define a BPB to work around it.
+// The data marked with (T) indicates a field required for a ThinkPad to
+// recognize the disk and (W) indicates fields written from IBM BIOS code.
+// The use of the BPB is based on what OpenBSD and NetBSD implemented in
+// their boot code but the required fields were determined by trial and error.
+//
+// Note: If additional space is needed in boot1, one solution would be to
+// move the "prompt" message data (below) to replace the OEM ID.
+
+		.org 0x03, 0x00
+oemid:		.space 0x08, 0x00	// OEM ID
+
+		.org 0x0b, 0x00
+bpb:		.word   512		// sector size (T)
+		.byte	0		// sectors/clustor
+		.word	0		// reserved sectors
+		.byte	0		// number of FATs
+		.word	0		// root entries
+		.word	0		// small sectors
+		.byte	0		// media type (W)
+		.word	0		// sectors/fat
+		.word	18		// sectors per track (T)
+		.word	2		// number of heads (T)
+		.long	0		// hidden sectors (W)
+		.long	0		// large sectors
+
+		.org 0x24, 0x00
+ebpb:		.byte	0		// BIOS physical drive number (W)
+
+		.org 0x25,0x90
+// 
+// Trampoline used by boot2 to call read to read data from the disk via
+// the BIOS.  Call with:
+//
+// %cx:%ax	- long    - LBA to read in
+// %es:(%bx)	- caddr_t - buffer to read data into
+// %dl		- byte    - drive to read from
+// %dh		- byte    - num sectors to read
+// 
+
+xread:
+		push %ss			// Address
+		pop %ds				//  data
+//
+// Setup an EDD disk packet and pass it to read
+// 
+xread.1:					// Starting
+		pushl $0x0			//  absolute
+		push %cx			//  block
+		push %ax			//  number
+		push %es			// Address of
+		push %bx			//  transfer buffer
+		xor %ax,%ax			// Number of
+		movb %dh,%al			//  blocks to
+		push %ax			//  transfer
+		push $0x10			// Size of packet
+		mov %sp,%bp			// Packet pointer
+		callw read			// Read from disk
+		lea 0x10(%bp),%sp		// Clear stack
+		lret				// To far caller
+// 
+// Load the rest of boot2 and BTX up, copy the parts to the right locations,
+// and start it all up.
+//
+
+//
+// Setup the segment registers to flat addressing (segment 0) and setup the
+// stack to end just below the start of our code.
+// 
+main:
+		cld				// String ops inc
+		xor %cx,%cx			// Zero
+		mov %cx,%es			// Address
+		mov %cx,%ds			//  data
+		mov %cx,%ss			// Set up
+		mov $start,%sp		//  stack
+//
+// Relocate ourself to MEM_REL.  Since %cx == 0, the inc %ch sets
+// %cx == 0x100.
+// 
+		mov %sp,%si			// Source = $start
+		mov $MEM_REL,%di	// Destination = 0x700
+		incb %ch			// Word count = 256 words (512 bytes)
+		rep
+		movsw				// Move boot1 to 0x700
+//
+// If we are on a hard drive, then load the MBR and look for the first
+// FreeBSD slice.  We use the fake partition entry below that points to
+// the MBR when we call nread.  The first pass looks for the first active
+// FreeBSD slice.  The second pass looks for the first non-active FreeBSD
+// slice if the first one fails.
+// 
+		mov $part4,%si		// %si = fake partition 
+		cmpb $0x80,%dl		// Hard drive?
+		jb main.4			// Jump if the drive number is not a hard drive
+		movb $0x1,%dh		// Sector Count
+		callw nread			// Read MBR into 0x8cec 
+
+		mov $0x1,%cx	 			// Two passes
+main.1:
+		mov $MEM_BUF+PRT_OFF,%si	// %si = 0x8eaa
+		movb $0x1,%dh				// Partition entry
+main.2:
+		cmpb $PRT_BSD,0x4(%si)		// Is BSD partition?
+		jne main.3					// Jump if the partition isn't BSD
+		jcxz main.5					// If second pass (cx = 0x0)
+		testb $0x80,(%si)			// First Pass: is partition active?
+		jnz main.5					// Jump if the partition is active
+main.3:
+		add $0x10,%si	 			// Next entry
+		incb %dh					// Increment partition entry
+		cmpb $0x1+PRT_NUM,%dh		// is partition entry < 0x5?
+		jb main.2					// Jump if entry < 0x5
+		dec %cx						// Decrement cx; start second pass
+		jcxz main.1
+//
+// If we get here, we didn't find any FreeBSD slices at all, so print an
+// error message and die.
+// 
+		mov $msg_part,%si		// Message
+		jmp error				// Error
+//
+// Floppies use partition 0 of drive 0.
+// 
+main.4: 	xor %dx,%dx			// Partition:drive
+//
+// Ok, we have a slice and drive in %dx now, so use that to locate and load
+// boot2.  %si references the start of the slice we are looking for, so go
+// ahead and load up the first 16 sectors (boot1 + boot2) from that.  When
+// we read it in, we conveniently use 0x8cec as our transfer buffer.  Thus,
+// boot1 ends up at 0x8cec, and boot2 starts at 0x8cec + 0x200 = 0x8eec.
+// The first part of boot2 is the disklabel, which is 0x114 bytes long.
+// The second part is BTX, which is thus loaded into 0x9000, which is where
+// it also runs from.  The boot2.bin binary starts right after the end of
+// BTX, so we have to figure out where the start of it is and then move the
+// binary to 0xc000.  Normally, BTX clients start at MEM_USR, or 0xa000, but
+// when we use btxld to create boot2, we use an entry point of 0x2000.  That
+// entry point is relative to MEM_USR; thus boot2.bin starts at 0xc000.
+// 
+main.5:
+		mov %dx,MEM_ARG			// Move %dx to 0x900
+		movb $NSECT,%dh			// Sector count: %dh = 0x10
+		callw nread				// Read 16 sectors to 0x8cec
+		mov $MEM_BTX,%bx		// %bx = 0x9000, the beginning of BTX
+		mov 0xa(%bx),%si		// Set %si to BTX length
+		add %bx,%si				//  %si = start of boot2.bin 
+
+		mov $MEM_USR+SIZ_PAG*2,%di			// %di = 0xc000; Client page 2
+		mov $MEM_BTX+(NSECT-1)*SIZ_SEC,%cx	// %cx = 0x920f
+
+		sub %si,%cx					// Obtain size of client
+		rep
+		movsb						// Move client to 0xc000
+		sub %di,%cx					// Byte count
+		xorb %al,%al				// Zero assumed bss from
+		rep							// the end of boot2.bin
+		stosb						//  up to 0x10000
+		callw seta20				// Enable A20
+		jmp start+MEM_JMP-MEM_ORG	// Start BTX
+
+#
+# Initialization routine.
+#
+init:
+		cli					# Disable interrupts
+		xor %ax,%ax
+		mov %ax,%ss
+		mov $MEM_ESP0,%sp	# %sp = 0x1800; supervisor stack
+		mov %ax,%es
+		mov %ax,%ds
+		pushl $0x2
+		popfl				# Clear EFLAGS
+#
+# Initialize memory.
+#
+		mov $MEM_IDT,%di				# %di = 0x1e00
+		mov $(MEM_ORG-MEM_IDT)/2,%cx	# %cx = 0x7200 ; Word Count
+		push %di
+		rep
+		stosw							# Clear memory range 0x1e00 - 0x9000
+		pop %di
+#
+# Create IDT.
+#
+		mov $idtctl,%si			# %si = IDT control string
+init.1:
+		lodsb					# Loads byte from %si to %al
+		cbw						# Sign extend %al to %ax
+		xchg %ax,%cx			# Set %cx = %ax
+		jcxz init.4				# If done
+		lodsb					# Loads P, DPL, and type flags to %al
+		xchg %ax,%dx	 		# %dx = P:DPL:type flags
+		lodsw					# Load control to %ax
+		xchg %ax,%bx			# %bx = control
+		lodsw					# Load handler offset
+		mov $SEL_SCODE,%dh		# %dh = supervisor segment selector
+
+init.2:
+		shr %bx				# Handle this int?
+		jnc init.3			# Jump if we don't handle the interrupt
+		mov %ax,(%di)			# Set handler offset
+		mov %dh,0x2(%di)		# Set selector
+		mov %dl,0x5(%di)		# Set P:DPL:type flags
+		add $0x4,%ax			# Next handler
+
+init.3:
+		lea 0x8(%di),%di	# Increment to next entry in IDT
+		loop init.2			# Loop until %cx = 0
+		jmp init.1			# Continue
+#
+# Initialize TSS.
+#
+init.4:
+		movb $_ESP0H,TSS_ESP0+1(%di)	# Set ESP0 (first byte of ESP)
+		movb $SEL_SDATA,TSS_SS0(%di)	# Set SS0
+		movb $_ESP1H,TSS_ESP1+1(%di)	# Set ESP1
+		movb $_TSSIO,TSS_MAP(%di)		# Set I/O bit map base
+ifdef(`PAGING',`
+#
+# Create page directory.
+#
+		xor %edx,%edx			# Page
+		mov $PAG_SIZ>>0x8,%dh		#  size
+		xor %eax,%eax			# Zero
+		mov $MEM_DIR,%di		# Page directory
+		mov $PAG_CNT>>0xa,%cl		# Entries
+		mov $MEM_TBL|0x7,%ax	 	# First entry
+init.5: 	stosl				# Write entry
+		add %dx,%ax			# To next
+		loop init.5			# Till done
+#
+# Create page tables.
+#
+		mov $MEM_TBL,%di		# Page table
+		mov $PAG_CNT>>0x8,%ch		# Entries
+		xor %ax,%ax			# Start address
+init.6: 	mov $0x7,%al			# Set U:W:P flags
+		cmp btx_hdr+0x8,%cx	 	# Standard user page?
+		jb init.7			# Yes
+		cmp $PAG_CNT-MEM_BTX>>0xc,%cx	# BTX memory?
+		jae init.7			# No or first page
+		and $~0x2,%al			# Clear W flag
+		cmp $PAG_CNT-MEM_USR>>0xc,%cx	# User page zero?
+		jne init.7			# No
+		testb $0x80,btx_hdr+0x7		# Unmap it?
+		jz init.7			# No
+		and $~0x1,%al			# Clear P flag
+init.7: 	stosl				# Set entry
+		add %edx,%eax			# Next address
+		loop init.6			# Till done
+')
+#
+# Bring up the system.
+#
+		mov $0x2820,%bx			# Set protected mode
+		callw setpic			#  IRQ offsets
+		lidt idtdesc	 		# Set IDT
+ifdef(`PAGING',`
+		xor %eax,%eax			# Set base
+		mov $MEM_DIR>>0x8,%ah		#  of page
+		mov %eax,%cr3			#  directory
+')
+		lgdt gdtdesc	 		# Set GDT
+		mov %cr0,%eax			# Switch to protected
+ifdef(`PAGING',`
+		or $0x80000001,%eax             #  mode and enable paging
+',`
+		or $0x01,%eax			#  mode
+')
+		mov %eax,%cr0			#  
+		ljmp $SEL_SCODE,$init.8		# To 32-bit code
+		.code32
+init.8:
+		xorl %ecx,%ecx			# Zero
+		movb $SEL_SDATA,%cl		# To 32-bit
+		movw %cx,%ss			#  stack
+#
+# Launch user task.
+#
+		movb $SEL_TSS,%cl		# Set task
+		ltr %cx				#  register
+		movl $MEM_USR,%edx		# User base address
+		movzwl %ss:BDA_MEM,%eax 	# Get free memory
+		shll $0xa,%eax			# To bytes
+		subl $0x1000,%eax		# Less arg space
+		subl %edx,%eax			# Less base
+		movb $SEL_UDATA,%cl		# User data selector
+		pushl %ecx			# Set SS
+		pushl %eax			# Set ESP
+		push $0x202			# Set flags (IF set)
+		push $SEL_UCODE			# Set CS
+		pushl btx_hdr+0xc		# Set EIP
+		pushl %ecx			# Set GS
+		pushl %ecx			# Set FS
+		pushl %ecx			# Set DS
+		pushl %ecx			# Set ES
+		pushl %edx			# Set EAX
+		movb $0x7,%cl			# Set remaining
+init.9:
+		push $0x0			#  general
+		loop init.9			#  registers
+ifdef(`BTX_SERIAL',`
+		call sio_init			# setup the serial console
+')
+		popa				#  and initialize
+		popl %es			# Initialize
+		popl %ds			#  user
+		popl %fs			#  segment
+		popl %gs			#  registers
+		iret				# To user mode
+
+int
+main(void)
+{
+    int autoboot;
+    ino_t ino;
+
+    dmadat = (void *)(roundup2(__base + (int32_t)&_end, 0x10000) - __base);
+    v86.ctl = V86_FLAGS;	// v86.ctl = 0x40000
+    dsk.drive = *(uint8_t *)PTOV(ARGS);
+    dsk.type = dsk.drive & DRV_HARD ? TYPE_AD : TYPE_FD;
+    dsk.unit = dsk.drive & DRV_MASK;
+    dsk.slice = *(uint8_t *)PTOV(ARGS + 1) + 1;
+    bootinfo.bi_version = BOOTINFO_VERSION;		// bi_version = 0x1
+    bootinfo.bi_size = sizeof(bootinfo);
+    bootinfo.bi_basemem = 0;	/* XXX will be filled by loader or kernel */
+    bootinfo.bi_extmem = memsize();		// Use V86 Mode to execute BIOS INT 0x88
+										// to obtain extended memory size
+    bootinfo.bi_memsizes_valid++;
+
+    /* Process configuration file */
+
+    autoboot = 1;
+
+    if ((ino = lookup(PATH_CONFIG)))	// ino = lookup("/boot.config")
+	fsread(ino, cmd, sizeof(cmd));		// cmd is a static global variable
+
+    if (*cmd) {
+	printf("%s: %s", PATH_CONFIG, cmd);
+	if (parse())
+	    autoboot = 0;
+	/* Do not process this command twice */
+	*cmd = 0;
+    }
+
+    /*
+     * Try to exec stage 3 boot loader. If interrupted by a keypress,
+     * or in case of failure, try to load a kernel directly instead.
+     */
+
+    if (autoboot && !*kname) {
+		memcpy(kname, PATH_BOOT3, sizeof(PATH_BOOT3));	/* kname = "boot/loader" */
+
+	/*
+    ** If the user doesn't press a key within three seconds, load the stage 3
+	** boot loader.
+	*/
+	if (!keyhit(3*SECOND)) {
+	    load();
+	    memcpy(kname, PATH_KERNEL, sizeof(PATH_KERNEL));
+	}
+    }
+
+    /* Present the user with the boot2 prompt. */
+
+    for (;;) {
+	printf("\nFreeBSD/i386 boot\n"
+	       "Default: %u:%s(%u,%c)%s\n"
+	       "boot: ",
+	       dsk.drive & DRV_MASK, dev_nm[dsk.type], dsk.unit,
+	       'a' + dsk.part, kname);
+	if (ioctrl & IO_SERIAL)
+	    sio_flush();
+	if (!autoboot || keyhit(5*SECOND))
+	    getstr();
+	else
+	    putchar('\n');
+	autoboot = 0;
+	if (parse())
+	    putchar('\a');
+	else
+	    load();
+    }
+}
+```

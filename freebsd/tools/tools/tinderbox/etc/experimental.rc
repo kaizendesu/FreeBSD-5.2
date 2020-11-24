@@ -1,0 +1,13 @@
+#
+# Tinderbox setup for experimental platforms.
+#
+# $FreeBSD$
+#
+
+comment		= Experimental platforms
+branches	= CURRENT
+env		= NOLIBC_R=YES, NOFORTH=YES
+platforms	= powerpc
+options		= --verbose, --verbose
+targets		= clean, update, patch, world, generic, lint
+patch		= %%arch%%.diff
